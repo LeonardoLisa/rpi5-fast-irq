@@ -113,5 +113,12 @@ void analyze_jitter(const char* filename) {
     std::cout << "Overflow (late/dropped events): " << overflow_count << std::endl;
     std::cout << "Total Out of Bounds: " << underflow_count + overflow_count << std::endl;
 
-    c1->SaveAs(Form("%s.png", filename));
+    // Strip ".dat" extension from output filename
+    std::string out_filename = filename;
+    size_t ext_pos = out_filename.rfind(".dat");
+    if (ext_pos != std::string::npos) {
+        out_filename.erase(ext_pos, 4);
+    }
+    
+    c1->SaveAs(Form("%s.png", out_filename.c_str()));
 }
