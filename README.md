@@ -100,6 +100,47 @@ By default, the module triggers on a Rising Edge (0V to 3.3V transition).
 
 ---
 
+## Benchmark Tool & Jitter Analysis
+
+This project includes a high-performance benchmark application designed to measure the time delta between consecutive GPIO interrupts and calculate system jitter. To eliminate disk I/O blocking, the application buffers up to 1,000,000 samples entirely in RAM and writes the dataset to a `.dat` file only upon termination.
+
+### Running the Benchmark
+1. Start the application: `sudo ./irq_test`
+2. Apply your external signal generator to the configured GPIO pin.
+3. Press `ENTER` to begin capturing data.
+4. Press `Ctrl+C` to terminate the capture. The application will export a file named `deltaevents_HHMMSS_DDMMYYYY.dat`.
+
+### ROOT CERN Analysis
+A ROOT macro (`analyze_jitter.C`) is provided to generate histograms, filter outliers (dropped events), and calculate the mean and standard deviation of the nominal jitter distribution.
+
+To execute the analysis:
+~~~bash
+root -l 'analyze_jitter.C("deltaevents_HH:MM:SS_DD-MM-YYYY.dat")'
+~~~
+Note on Quantization: The BCM2712 SoC utilizes a 50 MHz hardware clock for the ARM Generic Timer accessed via ktime_get_ns(). Consequently, all timestamps and calculated deltas possess a strict hardware quantization of 20ns. High-resolution histograms will naturally exhibit 20ns discrete binning. This is physical hardware behavior, not a software flaw.
+
+### Benchmark Results
+<table>
+<tr>
+<td align="center"><b>100 Hz</b></td>
+<td align="center"><b>500 Hz</b></td>
+</tr>
+<tr>
+<td><img src="Benchmark/100Hz.png" alt="100Hz Benchmark" width="400"/></td>
+<td><img src="Benchmark/500Hz.png" alt="500Hz Benchmark" width="400"/></td>
+</tr>
+<tr>
+<td align="center"><b>1 kHz</b></td>
+<td align="center"><b>10 kHz</b></td>
+</tr>
+<tr>
+<td><img src="Benchmark/1kHz.png" alt="1kHz Benchmark" width="400"/></td>
+<td><img src="Benchmark/10kHz.png" alt="10kHz Benchmark" width="400"/></td>
+</tr>
+</table>
+
+---
+
 ## Performance & Latency Estimates
 
 Because this project isolates the CPU and bypasses the standard scheduler, latency is highly deterministic. However, the Raspberry Pi 5 architecture introduces some physical constraints:
@@ -117,4 +158,5 @@ Because this project isolates the CPU and bypasses the standard scheduler, laten
 
 * **Module fails to load (`insmod: ERROR: could not insert module...`)**: Ensure your kernel headers match your running kernel (`uname -r`). 
 * **`poll()` error / File not found**: Ensure the kernel module is loaded before running the C++ app. Check if `/dev/rp1_gpio_irq` exists.
-* **Events are dropping**: If the main thread takes too long to print to the console, the Ring Buffer will fill up. Increase the buffer size in `main.cpp` (`LockFreeRingBuffer<GpioIrqEvent, 4096>`) or reduce the frequency of your hardware interrupts.
+* **Events are dropping (Hardware)**: If the frequency exceeds the kernel's processing capability, the kernel ring buffer will overflow. Increase `KBUF_SIZE` in `rpi_fast_irq.c`.
+* **Events are dropping (User Space)**: If the main thread takes too long to process data, the C++ Lock-Free Ring Buffer will fill up. Ensure no synchronous I/O operations block the polling loop.
