@@ -1,9 +1,20 @@
-echo "*.o" > .gitignore
-echo "*.ko" >> .gitignore
-echo "*.mod" >> .gitignore
-echo "*.mod.c" >> .gitignore
-echo "*.mod.o" >> .gitignore
-echo "*.symvers" >> .gitignore
-echo "*.order" >> .gitignore
-echo ".*.cmd" >> .gitignore
-echo "user_space/irq_test" >> .gitignore
+# Object files
+*.o
+.*.o
+
+# Executables
+*.x
+irq_test
+
+# Kernel module artifacts
+*.ko
+*.mod
+*.mod.c
+*.mod.o
+*.symvers
+*.order
+.*.cmd
+
+# Data and Plot files
+#*.dat
+#*.png

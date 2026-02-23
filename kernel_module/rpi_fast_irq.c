@@ -17,7 +17,6 @@
  * Your logical GPIO will be: Base (512) + Pin (17) = 529.
  * Update the GPIO_PIN macro below if necessary.
  * * 3. COMPILE THE MODULE:
- * You will need a Makefile (I can provide this next). 
  * Run: make
  * * 4. INSTALL THE MODULE:
  * sudo insmod rpi_fast_irq.ko
@@ -48,7 +47,7 @@
 
 // --- CONFIGURATION ---
 // Note: Change this to (BASE + 17) if your RP1 gpiochip starts at a different base offset.
-#define GPIO_PIN 17 
+#define GPIO_PIN 588 
 #define TARGET_CPU 3
 
 MODULE_LICENSE("GPL");
@@ -74,10 +73,13 @@ static unsigned int irq_number;
 static u32 total_interrupts = 0;
 
 // Communication with User Space
-static struct GpioIrqEvent current_event;
-static bool data_ready = false;
+// Kernel-level Ring Buffer to prevent dropped events at high frequencies (e.g., > 500Hz)
+#define KBUF_SIZE 256
+static struct GpioIrqEvent k_buffer[KBUF_SIZE];
+static unsigned int k_head = 0;
+static unsigned int k_tail = 0;
 static DECLARE_WAIT_QUEUE_HEAD(wq);
-static DEFINE_SPINLOCK(event_lock); // Protects current_event and data_ready
+static DEFINE_SPINLOCK(event_lock); // Protects k_buffer, k_head, and k_tail
 
 // --- INTERRUPT SERVICE ROUTINE (ISR) ---
 static irqreturn_t gpio_isr(int irq, void *dev_id) {
@@ -89,10 +91,17 @@ static irqreturn_t gpio_isr(int irq, void *dev_id) {
     spin_lock_irqsave(&event_lock, flags);
     
     total_interrupts++;
-    current_event.timestamp_ns = ts;
-    current_event.event_counter = total_interrupts;
-    current_event.pin_state = state;
-    data_ready = true;
+    k_buffer[k_head].timestamp_ns = ts;
+    k_buffer[k_head].event_counter = total_interrupts;
+    k_buffer[k_head].pin_state = state;
+    
+    // Advance head pointer
+    k_head = (k_head + 1) % KBUF_SIZE;
+    
+    // Handle buffer overflow: drop the oldest event by advancing the tail
+    if (k_head == k_tail) {
+        k_tail = (k_tail + 1) % KBUF_SIZE; 
+    }
     
     spin_unlock_irqrestore(&event_lock, flags);
 
@@ -123,13 +132,13 @@ static ssize_t dev_read(struct file *filep, char *buffer, size_t len, loff_t *of
         return -EINVAL;
     }
 
-    // Wait until data_ready is true. Sleep otherwise.
-    wait_event_interruptible(wq, data_ready);
+    // Wait until the buffer is not empty. Sleep otherwise.
+    wait_event_interruptible(wq, k_head != k_tail);
 
-    // Lock to read and clear the flag safely
+    // Lock to read and advance the tail pointer safely
     spin_lock_irqsave(&event_lock, flags);
-    local_event = current_event;
-    data_ready = false;
+    local_event = k_buffer[k_tail];
+    k_tail = (k_tail + 1) % KBUF_SIZE;
     spin_unlock_irqrestore(&event_lock, flags);
 
     // Copy data to user space (C++ library)
@@ -148,8 +157,9 @@ static __poll_t dev_poll(struct file *filep, poll_table *wait) {
     
     poll_wait(filep, &wq, wait);
     
-    if (data_ready) {
-        mask |= POLLIN | POLLRDNORM; // Data is ready to read
+    // Data is ready to read if the buffer is not empty
+    if (k_head != k_tail) {
+        mask |= POLLIN | POLLRDNORM; 
     }
     
     return mask;
