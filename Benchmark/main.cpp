@@ -79,7 +79,7 @@ std::string get_timestamp_filename() {
     auto now = std::chrono::system_clock::now();
     auto in_time_t = std::chrono::system_clock::to_time_t(now);
     std::stringstream ss;
-    ss << "deltaevents_" << std::put_time(std::localtime(&in_time_t), "%H:%M:%S_%d-%m-%Y") << ".dat";
+    ss << "deltaevents_" << std::put_time(std::localtime(&in_time_t), "%H-%M-%S_%d-%m-%Y") << ".dat";
     return ss.str();
 }
 
