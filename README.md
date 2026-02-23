@@ -1,13 +1,13 @@
 # Raspberry Pi 5 High-Performance GPIO Interrupt Handler
 
-## 📖 Project Overview
+## Project Overview
 This project provides a complete, near-real-time Linux interrupt handling system specifically designed for the Raspberry Pi 5 (BCM2712 / RP1 architecture). 
 
 Standard Linux user-space GPIO libraries suffer from high latency and non-deterministic jitter due to the Completely Fair Scheduler (CFS). This project solves that by using a custom Linux Kernel Module (LKM) to catch the hardware interrupt in Ring 0, paired with CPU core isolation (`isolcpus`) and IRQ affinity. The kernel then instantly wakes up a C++ User Space Application via a `poll()` wait queue, safely passing the data to the main thread using a Lock-Free Ring Buffer.
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 1. **Hardware:** A signal hits the Raspberry Pi 5 GPIO header (routed through the RP1 southbridge via PCIe).
 2. **Kernel Space (LKM):** The ISR (Interrupt Service Routine) fires on an isolated CPU core (CPU 3). It records a high-precision nanosecond timestamp and wakes up the user space.
@@ -16,7 +16,7 @@ Standard Linux user-space GPIO libraries suffer from high latency and non-determ
 
 ---
 
-## ⚙️ System Requirements & Preparation
+## System Requirements & Preparation
 
 To achieve true low-latency and low-jitter performance, you must configure the Raspberry Pi OS to isolate a CPU core and prevent the system from moving interrupts around.
 
@@ -115,7 +115,7 @@ A ROOT macro (`analyze_jitter.C`) is provided to generate histograms, filter out
 
 To execute the analysis:
 ~~~bash
-root -l 'analyze_jitter.C("deltaevents_HH:MM:SS_DD-MM-YYYY.dat")'
+root -l 'analyze_jitter.C("deltaevents_HH-MM-SS_DD-MM-YYYY.dat")'
 ~~~
 Note on Quantization: The BCM2712 SoC utilizes a 50 MHz hardware clock for the ARM Generic Timer accessed via ktime_get_ns(). Consequently, all timestamps and calculated deltas possess a strict hardware quantization of 20ns. High-resolution histograms will naturally exhibit 20ns discrete binning. This is physical hardware behavior, not a software flaw.
 
