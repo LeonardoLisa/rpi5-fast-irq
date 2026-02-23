@@ -108,7 +108,7 @@ This project includes a high-performance benchmark application designed to measu
 1. Start the application: `sudo ./irq_test`
 2. Apply your external signal generator to the configured GPIO pin.
 3. Press `ENTER` to begin capturing data.
-4. Press `Ctrl+C` to terminate the capture. The application will export a file named `deltaevents_HHMMSS_DDMMYYYY.dat`.
+4. Press `Ctrl+C` to terminate the capture. The application will export a file named `deltaevents_HH-MM-SS_DD-MM-YYYY.dat.`.
 
 ### ROOT CERN Analysis
 A ROOT macro (`analyze_jitter.C`) is provided to generate histograms, filter outliers (dropped events), and calculate the mean and standard deviation of the nominal jitter distribution.
