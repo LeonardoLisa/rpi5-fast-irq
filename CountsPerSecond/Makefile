@@ -4,10 +4,10 @@ CXXFLAGS := -Wall -Wextra -O3 -std=c++17
 LDFLAGS := -pthread
 
 # Target executable name
-TARGET := benchmark.x
+TARGET := CPS.x
 
 # Source files
-SRCS := benchmark.cpp RpiFastIrq.cpp
+SRCS := cps_monitor.cpp RpiFastIrq.cpp
 
 # Object files
 OBJS := $(SRCS:.cpp=.o)

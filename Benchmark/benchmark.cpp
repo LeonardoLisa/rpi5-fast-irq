@@ -1,5 +1,5 @@
 /**
- * @file main.cpp
+ * @file benchmark.cpp
  * @version 1.2.0
  * @date 2026-02-23
  * @author Leonardo Lisa
