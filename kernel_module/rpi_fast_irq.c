@@ -40,7 +40,8 @@
 #include <linux/poll.h>
 #include <linux/ktime.h>
 #include <linux/cpumask.h>
-#include <linux/spinlock.h>
+#include <linux/mm.h>
+#include <linux/vmalloc.h>
 
 #define DEVICE_NAME "rp1_gpio_irq"
 #define CLASS_NAME  "rp1_irq_class"
@@ -63,6 +64,14 @@ struct GpioIrqEvent {
     u32 pin_state;
 };
 
+#define KBUF_SIZE 256
+
+struct SharedRingBuffer {
+    u32 head;
+    u32 tail;
+    struct GpioIrqEvent events[KBUF_SIZE];
+};
+
 // --- GLOBAL VARIABLES ---
 static int major_num;
 static struct class* irq_class = NULL;
@@ -72,38 +81,27 @@ static struct cdev irq_cdev;
 static unsigned int irq_number;
 static u32 total_interrupts = 0;
 
-// Communication with User Space
-// Kernel-level Ring Buffer to prevent dropped events at high frequencies (e.g., > 500Hz)
-#define KBUF_SIZE 256
-static struct GpioIrqEvent k_buffer[KBUF_SIZE];
-static unsigned int k_head = 0;
-static unsigned int k_tail = 0;
+static struct SharedRingBuffer *shared_buf = NULL;
 static DECLARE_WAIT_QUEUE_HEAD(wq);
-static DEFINE_SPINLOCK(event_lock); // Protects k_buffer, k_head, and k_tail
 
 // --- INTERRUPT SERVICE ROUTINE (ISR) ---
 static irqreturn_t gpio_isr(int irq, void *dev_id) {
-    unsigned long flags;
     u64 ts = ktime_get_ns();
     int state = gpio_get_value(GPIO_PIN);
+    u32 current_head;
 
-    // Lock to update the payload safely in atomic context
-    spin_lock_irqsave(&event_lock, flags);
-    
     total_interrupts++;
-    k_buffer[k_head].timestamp_ns = ts;
-    k_buffer[k_head].event_counter = total_interrupts;
-    k_buffer[k_head].pin_state = state;
+
+    // Lock-free read of the current head
+    current_head = shared_buf->head;
     
-    // Advance head pointer
-    k_head = (k_head + 1) % KBUF_SIZE;
+    // Write payload
+    shared_buf->events[current_head % KBUF_SIZE].timestamp_ns = ts;
+    shared_buf->events[current_head % KBUF_SIZE].event_counter = total_interrupts;
+    shared_buf->events[current_head % KBUF_SIZE].pin_state = state;
     
-    // Handle buffer overflow: drop the oldest event by advancing the tail
-    if (k_head == k_tail) {
-        k_tail = (k_tail + 1) % KBUF_SIZE; 
-    }
-    
-    spin_unlock_irqrestore(&event_lock, flags);
+    // Memory barrier: ensure payload is written to memory before head is updated
+    smp_store_release(&shared_buf->head, current_head + 1);
 
     // Wake up the user space thread sleeping on poll()
     wake_up_interruptible(&wq);
@@ -123,33 +121,22 @@ static int dev_release(struct inode *inodep, struct file *filep) {
     return 0;
 }
 
-static ssize_t dev_read(struct file *filep, char *buffer, size_t len, loff_t *offset) {
-    int error_count = 0;
-    unsigned long flags;
-    struct GpioIrqEvent local_event;
+static int dev_mmap(struct file *filep, struct vm_area_struct *vma) {
+    unsigned long size = vma->vm_end - vma->vm_start;
+    unsigned long expected_size = PAGE_ALIGN(sizeof(struct SharedRingBuffer));
 
-    if (len < sizeof(struct GpioIrqEvent)) {
+    if (size > expected_size) {
+        pr_err("[%s] mmap size %lu exceeds allocated size %lu\n", DEVICE_NAME, size, expected_size);
         return -EINVAL;
     }
 
-    // Wait until the buffer is not empty. Sleep otherwise.
-    wait_event_interruptible(wq, k_head != k_tail);
-
-    // Lock to read and advance the tail pointer safely
-    spin_lock_irqsave(&event_lock, flags);
-    local_event = k_buffer[k_tail];
-    k_tail = (k_tail + 1) % KBUF_SIZE;
-    spin_unlock_irqrestore(&event_lock, flags);
-
-    // Copy data to user space (C++ library)
-    error_count = copy_to_user(buffer, &local_event, sizeof(struct GpioIrqEvent));
-
-    if (error_count == 0) {
-        return sizeof(struct GpioIrqEvent);
-    } else {
-        pr_err("[%s] Failed to send %d characters to the user\n", DEVICE_NAME, error_count);
-        return -EFAULT;
+    // Map the vmalloc area to user space
+    if (remap_vmalloc_range(vma, shared_buf, 0)) {
+        pr_err("[%s] mmap remap_vmalloc_range failed\n", DEVICE_NAME);
+        return -EAGAIN;
     }
+
+    return 0;
 }
 
 static __poll_t dev_poll(struct file *filep, poll_table *wait) {
@@ -157,8 +144,8 @@ static __poll_t dev_poll(struct file *filep, poll_table *wait) {
     
     poll_wait(filep, &wq, wait);
     
-    // Data is ready to read if the buffer is not empty
-    if (k_head != k_tail) {
+    // Data is ready to read if head != tail using lock-free read
+    if (smp_load_acquire(&shared_buf->head) != smp_load_acquire(&shared_buf->tail)) {
         mask |= POLLIN | POLLRDNORM; 
     }
     
@@ -167,7 +154,7 @@ static __poll_t dev_poll(struct file *filep, poll_table *wait) {
 
 static struct file_operations fops = {
     .open = dev_open,
-    .read = dev_read,
+    .mmap = dev_mmap,
     .poll = dev_poll,
     .release = dev_release,
     .owner = THIS_MODULE
@@ -179,15 +166,25 @@ static int __init rpi_fast_irq_init(void) {
     int result;
     dev_t dev_num;
     struct cpumask affinity_mask;
+    unsigned long buffer_size = PAGE_ALIGN(sizeof(struct SharedRingBuffer));
 
     pr_info("[%s] Initializing kernel module...\n", DEVICE_NAME);
+
+    // Allocate memory accessible via mmap to user space
+    shared_buf = vmalloc_user(buffer_size);
+    if (!shared_buf) {
+        pr_err("[%s] Failed to allocate shared buffer\n", DEVICE_NAME);
+        return -ENOMEM;
+    }
+    shared_buf->head = 0;
+    shared_buf->tail = 0;
 
     // 1. Setup Character Device
     result = alloc_chrdev_region(&dev_num, 0, 1, DEVICE_NAME);
     major_num = MAJOR(dev_num);
     if (result < 0) {
         pr_err("[%s] Failed to allocate major number\n", DEVICE_NAME);
-        return result;
+        goto r_vmalloc;
     }
 
     cdev_init(&irq_cdev, &fops);
@@ -242,6 +239,8 @@ r_device:
     class_destroy(irq_class);
     cdev_del(&irq_cdev);
     unregister_chrdev_region(dev_num, 1);
+r_vmalloc:
+    vfree(shared_buf);
     return -1;
 }
 
@@ -260,6 +259,11 @@ static void __exit rpi_fast_irq_exit(void) {
     class_destroy(irq_class);
     cdev_del(&irq_cdev);
     unregister_chrdev_region(dev_num, 1);
+
+    // Free shared memory buffer
+    if (shared_buf) {
+        vfree(shared_buf);
+    }
 
     pr_info("[%s] Module successfully unloaded.\n", DEVICE_NAME);
 }
