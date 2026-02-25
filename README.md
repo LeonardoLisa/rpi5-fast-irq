@@ -15,6 +15,7 @@ The project is divided into the following directories:
 * **`Basic_usage/`**: A minimal C++ implementation (`irq_test.x`) demonstrating how to instantiate the library and receive events.
 * **`Benchmark/`**: A high-performance tool (`benchmark.x`) and a ROOT macro (`analyze_jitter.C`) to measure the time delta between consecutive GPIO interrupts, buffer up to 1,000,000 samples in RAM, and calculate system jitter.
 * **`CountsPerSecond/`**: A real-time terminal monitor (`CPS.x`) utilizing ANSI escape codes to display the live interrupt frequency.
+* **`CountsPerSecond_Plot/`**: A real-time graphical monitor (`cps_root.x`) that plots Counts Per Second (CPS) using the CERN ROOT framework.
 
 ---
 
@@ -161,6 +162,20 @@ cd CountsPerSecond
 make
 sudo ./CPS.x
 ```
+
+---
+
+## Real-Time Graphical Monitor (ROOT)
+
+To visualize the interrupt frequency dynamically on a live updating graph, use the ROOT-based GUI application. This tool requires the CERN ROOT framework to be installed on your system.
+
+```bash
+cd CountsPerSecond_Plot
+make
+sudo ./cps_root.x
+```
+
+Note: The application plots a sliding 60-second window and auto-scales the Y-axis based on the live data. Close the GUI window or press Ctrl+C in the terminal to terminate.
 
 ---
 
