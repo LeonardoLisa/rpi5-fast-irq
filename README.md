@@ -7,6 +7,17 @@ Standard Linux user-space GPIO libraries suffer from high latency and non-determ
 
 ---
 
+## Repository Structure
+
+The project is divided into the following directories:
+
+* **`kernel_module/`**: Contains the LKM (`rpi_fast_irq.c`) responsible for catching the hardware interrupt in Ring 0 and exposing the `mmap` interface.
+* **`Basic_usage/`**: A minimal C++ implementation (`irq_test.x`) demonstrating how to instantiate the library and receive events.
+* **`Benchmark/`**: A high-performance tool (`benchmark.x`) and a ROOT macro (`analyze_jitter.C`) to measure the time delta between consecutive GPIO interrupts, buffer up to 1,000,000 samples in RAM, and calculate system jitter.
+* **`CountsPerSecond/`**: A real-time terminal monitor (`CPS.x`) utilizing ANSI escape codes to display the live interrupt frequency.
+
+---
+
 ## Architecture
 
 1. **Hardware:** A signal hits the Raspberry Pi 5 GPIO header (routed through the RP1 southbridge via PCIe).
@@ -23,22 +34,22 @@ To achieve true low-latency and low-jitter performance, you must configure the R
 ### 1. Isolate CPU Core 3
 We need to tell the Linux scheduler to keep standard processes off CPU 3.
 1. Edit the boot configuration file:
-   ~~~bash
+   ```bash
    sudo nano /boot/firmware/cmdline.txt
-   ~~~
+   ```
 2. Append the following to the end of the existing line (do not create a new line):
    `isolcpus=3`
 3. Save and reboot:
-   ~~~bash
+   ```bash
    sudo reboot
-   ~~~
+   ```
 
 ### 2. Disable irqbalance
 Prevent the OS from automatically migrating our custom IRQ to other cores.
-~~~bash
+```bash
 sudo systemctl stop irqbalance
 sudo systemctl disable irqbalance
-~~~
+```
 
 ---
 
@@ -46,34 +57,32 @@ sudo systemctl disable irqbalance
 
 ### Dependencies
 Ensure you have the required build tools and kernel headers installed:
-~~~bash
+```bash
 sudo apt update
 sudo apt install build-essential linux-headers-$(uname -r)
-~~~
+```
 
 ### Step 1: Compile and Load the Kernel Module
-Navigate to the directory containing `rpi_fast_irq.c` and its `Makefile`.
-~~~bash
-# Compile the module
+Navigate to the `kernel_module` directory.
+```bash
+cd kernel_module
 make
-
-# Insert the module into the kernel
 sudo insmod rpi_fast_irq.ko
 
 # Verify it loaded correctly
 dmesg | tail -n 10
 ls -l /dev/rp1_gpio_irq
-~~~
+```
 
-### Step 2: Compile and Run the C++ Application
-Navigate to the directory containing `main.cpp`, `RpiFastIrq.cpp`, and their `Makefile`.
-~~~bash
-# Compile the application
+### Step 2: Compile and Run the Basic Example
+Navigate to the `Basic_usage` directory.
+```bash
+cd ../Basic_usage
 make
 
 # Run the application (requires sudo to read the /dev/ file and set SCHED_FIFO priority)
-sudo ./irq_test
-~~~
+sudo ./irq_test.x
+```
 
 ---
 
@@ -82,15 +91,15 @@ sudo ./irq_test
 ### How to Change the GPIO Pin
 The Raspberry Pi 5 uses the RP1 chip for I/O. Logical GPIO numbers might have a base offset assigned by the kernel (e.g., base 512).
 1. **Find your RP1 Base:** Run `cat /sys/class/gpio/gpiochip*/label` to find the `pinctrl-rp1` chip. If its base is 512, and you want physical pin 11 (Logical GPIO 17), your target is `512 + 17 = 529`.
-2. **Edit the C file:** Open `rpi_fast_irq.c` and locate the `GPIO_PIN` macro:
-   ~~~c
+2. **Edit the C file:** Open `kernel_module/rpi_fast_irq.c` and locate the `GPIO_PIN` macro:
+   ```c
    #define GPIO_PIN 17 // Change this to your calculated pin number
-   ~~~
+   ```
 3. Recompile and reload the module (`make clean && make`, `sudo rmmod rpi_fast_irq`, `sudo insmod rpi_fast_irq.ko`).
 
 ### How to Change the Interrupt Trigger Type
 By default, the module triggers on a Rising Edge (0V to 3.3V transition). 
-1. Open `rpi_fast_irq.c` and locate the `request_irq` function.
+1. Open `kernel_module/rpi_fast_irq.c` and locate the `request_irq` function.
 2. Change the `IRQF_TRIGGER_RISING` flag:
    * **Falling Edge:** `IRQF_TRIGGER_FALLING`
    * **Both Edges:** `IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING`
@@ -102,22 +111,25 @@ By default, the module triggers on a Rising Edge (0V to 3.3V transition).
 
 ## Benchmark Tool & Jitter Analysis
 
-This project includes a high-performance benchmark application designed to measure the time delta between consecutive GPIO interrupts and calculate system jitter. To eliminate disk I/O blocking, the application buffers up to 1,000,000 samples entirely in RAM and writes the dataset to a `.dat` file only upon termination.
-
 ### Running the Benchmark
-1. Start the application: `sudo ./irq_test`
-2. Apply your external signal generator to the configured GPIO pin.
-3. Press `ENTER` to begin capturing data.
-4. Press `Ctrl+C` to terminate the capture. The application will export a file named `deltaevents_HH-MM-SS_DD-MM-YYYY.dat.`.
+1. Navigate to the Benchmark directory and compile:
+   ```bash
+   cd Benchmark
+   make
+   ```
+2. Start the application: `sudo ./benchmark.x`
+3. Apply your external signal generator to the configured GPIO pin.
+4. Press `ENTER` to begin capturing data.
+5. Press `Ctrl+C` to terminate the capture. The application will export a `.dat` file.
 
 ### ROOT CERN Analysis
 A ROOT macro (`analyze_jitter.C`) is provided to generate histograms, filter outliers (dropped events), and calculate the mean and standard deviation of the nominal jitter distribution.
 
 To execute the analysis:
-~~~bash
+```bash
 root -l 'analyze_jitter.C("deltaevents_HH-MM-SS_DD-MM-YYYY.dat")'
-~~~
-Note on Quantization: The BCM2712 SoC utilizes a 50 MHz hardware clock for the ARM Generic Timer accessed via ktime_get_ns(). Consequently, all timestamps and calculated deltas possess a strict hardware quantization of 20ns. High-resolution histograms will naturally exhibit 20ns discrete binning. This is physical hardware behavior, not a software flaw.
+```
+*Note on Quantization:* The BCM2712 SoC utilizes a 50 MHz hardware clock for the ARM Generic Timer accessed via `ktime_get_ns()`. Consequently, all timestamps and calculated deltas possess a strict hardware quantization of 20ns. High-resolution histograms will naturally exhibit 20ns discrete binning.
 
 ### Benchmark Results
 <table>
@@ -141,6 +153,17 @@ Note on Quantization: The BCM2712 SoC utilizes a 50 MHz hardware clock for the A
 
 ---
 
+## Live CPS Monitor
+
+To monitor the interrupt frequency in real-time, use the Counts Per Second (CPS) application.
+```bash
+cd CountsPerSecond
+make
+sudo ./CPS.x
+```
+
+---
+
 ## Performance & Latency Estimates
 
 Because this project isolates the CPU and bypasses the standard scheduler, latency is highly deterministic. However, the Raspberry Pi 5 architecture introduces some physical constraints:
@@ -159,5 +182,5 @@ Because this project isolates the CPU and bypasses the standard scheduler, laten
 * **Module fails to load (`insmod: ERROR: could not insert module...`)**: Ensure your kernel headers match your running kernel (`uname -r`). 
 * **`poll()` error / File not found**: Ensure the kernel module is loaded before running the C++ app. Check if `/dev/rp1_gpio_irq` exists.
 * **Warning: Failed to set SCHED_FIFO priority**: You must run the C++ executable with `sudo` or grant the process `CAP_SYS_NICE` capabilities.
-* **Events are dropping (Hardware)**: If the frequency exceeds the kernel's processing capability, the kernel ring buffer will overflow. Increase `KBUF_SIZE` in `rpi_fast_irq.c` and `RpiFastIrq.hpp`.
+* **Events are dropping (Hardware)**: If the frequency exceeds the kernel's processing capability, the kernel ring buffer will overflow. Increase `KBUF_SIZE` in `kernel_module/rpi_fast_irq.c` and the corresponding headers.
 * **Events are dropping (User Space)**: If the main thread takes too long to process data, the C++ Lock-Free Ring Buffer will fill up. Ensure no synchronous I/O operations block the polling loop.
