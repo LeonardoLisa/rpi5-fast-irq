@@ -1,7 +1,7 @@
 /**
  * @file benchmark.cpp
- * @version 1.2.0
- * @date 2026-02-23
+ * @version 1.3.0
+ * @date 2026-02-26
  * @author Leonardo Lisa
  * @brief Benchmark application for Rpi5 GPIO IRQ Latency and Jitter analysis.
  * Requirements: RpiFastIrq library, isolated CPU core 3, rpi_fast_irq kernel module.
@@ -54,6 +54,7 @@ public:
 
 std::atomic<bool> g_keep_running{true};
 std::atomic<bool> g_capture_active{false};
+std::atomic<uint32_t> g_user_space_drops{0};
 LockFreeRingBuffer<GpioIrqEvent, 1024> g_event_buffer; 
 
 void print_header() {
@@ -91,7 +92,9 @@ int main() {
 
     auto my_irq_callback = [](const GpioIrqEvent& event) {
         if (g_capture_active) {
-            g_event_buffer.push(event);
+            if (!g_event_buffer.push(event)) {
+                g_user_space_drops.fetch_add(1, std::memory_order_relaxed);
+            }
         }
     };
 
@@ -101,10 +104,9 @@ int main() {
     }
 
     std::cout << "\n[Status] Ready. Press ENTER to start benchmark..." << std::endl;
-    
-    // Wait for a single ENTER key press
     std::cin.get();
 
+    std::string filename = get_timestamp_filename();
     std::cout << "[Running] Capturing... Press Ctrl+C to stop." << std::endl;
     g_capture_active = true;
     
@@ -117,41 +119,50 @@ int main() {
     GpioIrqEvent event;
     auto last_ui_update = std::chrono::steady_clock::now();
 
+    auto process_event = [&](const GpioIrqEvent& ev) {
+        if (last_counter != 0 && ev.event_counter != last_counter + 1) {
+            dropped_events += (ev.event_counter - last_counter - 1);
+        }
+        last_counter = ev.event_counter;
+
+        if (last_timestamp != 0) {
+            deltas.push_back(ev.timestamp_ns - last_timestamp);
+        }
+        last_timestamp = ev.timestamp_ns;
+    };
+
     while (g_keep_running) {
         if (g_event_buffer.pop(event)) {
-            if (last_counter != 0 && event.event_counter != last_counter + 1) {
-                dropped_events += (event.event_counter - last_counter - 1);
-            }
-            last_counter = event.event_counter;
+            process_event(event);
 
-            if (last_timestamp != 0) {
-                deltas.push_back(event.timestamp_ns - last_timestamp);
-            }
-            last_timestamp = event.timestamp_ns;
-
-            // Non-blocking UI update rate-limited to 250ms
             auto now = std::chrono::steady_clock::now();
             if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_ui_update).count() >= 250) {
                 std::cout << "\r[Running] Captured: " << deltas.size() 
-                          << " | Dropped: " << dropped_events << std::flush;
+                          << " | Kernel Drops: " << dropped_events 
+                          << " | User Drops: " << g_user_space_drops.load(std::memory_order_relaxed) 
+                          << std::flush;
                 last_ui_update = now;
             }
         } else {
             std::this_thread::sleep_for(std::chrono::microseconds(10));
         }
     }
-    std::cout << "\n";
-
+    
+    g_capture_active = false;
     irq_handler.stop();
 
-    std::string filename = get_timestamp_filename();
-    std::cout << "\n[System] Saving to " << filename << "..." << std::endl;
+    while (g_event_buffer.pop(event)) {
+        process_event(event);
+    }
+    
+    std::cout << "\n\n[System] Saving to " << filename << "..." << std::endl;
     
     std::ofstream outfile(filename);
     if (outfile.is_open()) {
         for (const auto& d : deltas) outfile << d << "\n";
         outfile << "# Total_Samples: " << deltas.size() << "\n";
         outfile << "# Hardware_Dropped_Events: " << dropped_events << "\n";
+        outfile << "# UserSpace_Dropped_Events: " << g_user_space_drops.load() << "\n";
         outfile.close();
     }
 

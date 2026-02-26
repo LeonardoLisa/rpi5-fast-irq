@@ -162,6 +162,7 @@ cd CountsPerSecond
 make
 sudo ./cps_monitor.x
 ```
+<img src="CountsPerSecond/CPS_Monitor.PNG" alt="Live CPS Monitor" width="600"/>
 
 ---
 
@@ -176,6 +177,7 @@ make
 # If using a Conda environment, preserve compiler paths by explicitly passing CXX
 sudo CXX=g++ -E ./cps_root.x
 ```
+<img src="CountsPerSecond_Plot/Live_CPS_Plot.PNG" alt="Live CPS ROOT Plot" width="600"/>
 
 Note: The application plots a sliding 60-second window and auto-scales the Y-axis based on the live data. Close the GUI window or press Ctrl+C in the terminal to terminate.
 
