@@ -37,7 +37,7 @@ struct GpioIrqEvent {
 struct SharedRingBuffer {
     uint32_t head;
     uint32_t tail;
-    GpioIrqEvent events[KBUF_SIZE];
+    //GpioIrqEvent events[KBUF_SIZE];
 };
 
 class RpiFastIrq {

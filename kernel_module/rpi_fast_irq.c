@@ -71,7 +71,7 @@ MODULE_VERSION("2.0");
 struct GpioIrqEvent {
     u64 timestamp_ns;
     u32 event_counter;
-    u32 pin_state;
+    // u32 pin_state;
 };
 
 #define KBUF_SIZE 256
@@ -96,7 +96,7 @@ static DECLARE_WAIT_QUEUE_HEAD(wq);
 
 static irqreturn_t gpio_isr(int irq, void *dev_id) {
     u64 ts = ktime_get_ns();
-    int state = 1; //gpio_get_value(GPIO_PIN);
+    //int state = gpio_get_value(GPIO_PIN);
     u32 current_head;
 
     total_interrupts++;
@@ -135,9 +135,9 @@ static int dev_mmap(struct file *filep, struct vm_area_struct *vma) {
         return -EINVAL;
     }
 
-    // L'eliminazione di pgprot_noncached garantisce che l'area mmap erediti 
-    // gli attributi cacheable originali di vmalloc_user. La coerenza tra 
-    // CPU 3 (LKM) e il thread C++ è garantita a livello hardware.
+    // Removing pgprot_noncached ensures the mmap area inherits 
+    // the original cacheable attributes of vmalloc_user. Coherency between 
+    // CPU 3 (LKM) and the C++ thread is guaranteed at the hardware level.
 
     // Map the vmalloc area to user space
     if (remap_vmalloc_range(vma, shared_buf, 0)) {

@@ -29,7 +29,7 @@
 struct GpioIrqEvent {
     uint64_t timestamp_ns;
     uint32_t event_counter;
-    uint32_t pin_state;
+    //uint32_t pin_state;
 };
 
 #define KBUF_SIZE 256

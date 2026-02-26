@@ -68,7 +68,6 @@ std::atomic<bool> g_keep_running{true};
 
 // Handle Ctrl+C (SIGINT) to shut down gracefully
 void signal_handler(int signum) {
-    (void)signum;
     std::cout << "\n[Main] Shutdown signal received. Exiting safely...\n";
     g_keep_running = false;
 }
@@ -106,7 +105,7 @@ int main() {
 
     std::cout << "[Main] Listening for interrupts on CPU 3. Press Ctrl+C to stop.\n";
     std::cout << "--------------------------------------------------------------\n";
-    std::cout << "EVENT #\t\tPIN STATE\tTIMESTAMP (ns)\n";
+    std::cout << "EVENT #\t\tTIMESTAMP (ns)\n";
     std::cout << "--------------------------------------------------------------\n";
 
     // The Consumer Loop (Main Thread)
@@ -117,7 +116,6 @@ int main() {
         if (g_event_buffer.pop(received_event)) {
             // We got an event! We can print it here safely without blocking the ISR.
             std::cout << received_event.event_counter << "\t\t"
-                      << received_event.pin_state << "\t\t"
                       << received_event.timestamp_ns << "\n";
         } else {
             // Buffer is empty. Sleep for a short time to avoid 100% CPU usage
