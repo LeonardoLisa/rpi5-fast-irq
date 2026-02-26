@@ -1,7 +1,7 @@
 /*
  * -- Usage --
  * to load workspace:conda activate science
- * start root: root -l 'analyze_jitter.C("deltaevents_181210_23022026.dat")'
+ * start root: root -l 'analyze_jitter.C("filename.dat")'
  * to exit: .q
  */
 
@@ -83,12 +83,12 @@ void analyze_jitter(const char* filename) {
     if (sigma == 0) sigma = 1000;
 
     // Center X-axis: mean +/- N sigma
-    double plot_min = mean - (2.0 * sigma);
-    double plot_max = mean + (2.0 * sigma);
+    double plot_min = mean - (3.0 * sigma);
+    double plot_max = mean + (3.0 * sigma);
 
     // Histogram
     TCanvas *c1 = new TCanvas("c1", "Jitter Analysis", 800, 600);
-    TH1D *h1 = new TH1D("h1", Form("Time Deltas Distribution;Delta Time [ns]; #"), 400, plot_min, plot_max);
+    TH1D *h1 = new TH1D("h1", Form("Time Deltas Distribution;Delta Time [ns]; #"), 200, plot_min, plot_max);
 
     for (double d : data) {
         h1->Fill(d);
