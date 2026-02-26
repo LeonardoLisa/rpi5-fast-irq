@@ -1,9 +1,9 @@
 /**
  * @file cps_monitor.cpp
- * @version 1.0.0
+ * @version 2.1.0
  * @date 2026-02-25
  * @author Leonardo Lisa
- * @brief Real-time Counts Per Second (CPS) monitor for GPIO interrupts with ANSI terminal UI.
+ * @brief Real-time CPS monitor for GPIO interrupts based on absolute Hardware Timestamps.
  * @requirements RpiFastIrq library, kernel module loaded, root privileges for SCHED_FIFO.
  * * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,7 +19,6 @@
 #include <iomanip>
 #include "RpiFastIrq.hpp"
 
-// ANSI escape codes for terminal styling
 #define ANSI_RESET   "\033[0m"
 #define ANSI_BOLD    "\033[1m"
 #define ANSI_CYAN    "\033[36m"
@@ -32,7 +31,10 @@
 #define SHOW_CURSOR  "\033[?25h"
 
 std::atomic<bool> g_keep_running{true};
-std::atomic<uint32_t> g_pulse_count{0};
+
+// Store the hard real-time data generated directly by the kernel
+std::atomic<uint64_t> g_latest_timestamp_ns{0};
+std::atomic<uint32_t> g_latest_event_counter{0};
 
 void signal_handler(int signum) {
     (void)signum;
@@ -56,16 +58,16 @@ void print_banner() {
 
 int main() {
     std::signal(SIGINT, signal_handler);
-    
-    // Hide standard terminal cursor to prevent flickering during redraws
     std::cout << HIDE_CURSOR;
     print_banner();
 
     RpiFastIrq irq_handler("/dev/rp1_gpio_irq");
 
-    // Callback increments the local counter lock-free
-    auto my_irq_callback = [](const GpioIrqEvent& /*event*/) {
-        g_pulse_count.fetch_add(1, std::memory_order_relaxed);
+    // The callback no longer counts events manually. 
+    // It simply stores the latest data packet certified by the kernel.
+    auto my_irq_callback = [](const GpioIrqEvent& event) {
+        g_latest_timestamp_ns.store(event.timestamp_ns, std::memory_order_relaxed);
+        g_latest_event_counter.store(event.event_counter, std::memory_order_relaxed);
     };
 
     if (!irq_handler.start(my_irq_callback)) {
@@ -74,36 +76,52 @@ int main() {
         return 1;
     }
 
-    // Align loop to a precise 1-second boundary
+    // Wait briefly to synchronize the first events
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    uint64_t prev_ts = g_latest_timestamp_ns.load(std::memory_order_relaxed);
+    uint32_t prev_counter = g_latest_event_counter.load(std::memory_order_relaxed);
+
     auto next_tick = std::chrono::steady_clock::now() + std::chrono::seconds(1);
     
     while (g_keep_running.load(std::memory_order_acquire)) {
         std::this_thread::sleep_until(next_tick);
-        
         if (!g_keep_running.load(std::memory_order_acquire)) break;
 
-        // Read and reset the counter atomically
-        uint32_t current_cps = g_pulse_count.exchange(0, std::memory_order_relaxed);
+        uint64_t curr_ts = g_latest_timestamp_ns.load(std::memory_order_relaxed);
+        uint32_t curr_counter = g_latest_event_counter.load(std::memory_order_relaxed);
         
-        // Dynamic color coding based on frequency rate
-        const char* color_code = ANSI_GREEN;
-        if (current_cps > 50000) {
-            color_code = ANSI_RED;
-        } else if (current_cps > 10000) {
-            color_code = ANSI_YELLOW;
+        uint32_t current_cps = 0;
+        uint64_t dt_ns = 0;
+        uint32_t delta_events = 0;
+
+        // Calculate the true frequency based on the Raspberry Pi hardware clock
+        if (curr_counter > prev_counter && curr_ts > prev_ts) {
+            dt_ns = curr_ts - prev_ts;
+            double dt_sec = dt_ns / 1e9;
+            delta_events = curr_counter - prev_counter;
+            current_cps = static_cast<uint32_t>((delta_events / dt_sec) + 0.5); // Round to nearest integer
         }
 
-        // Carriage return (\r) moves cursor to the beginning of the line
-        // CLEAR_LINE (\033[K) erases the current line to prevent trailing artifacts
+        prev_ts = curr_ts;
+        prev_counter = curr_counter;
+        
+        const char* color_code = ANSI_GREEN;
+        if (current_cps > 50000) color_code = ANSI_RED;
+        else if (current_cps > 10000) color_code = ANSI_YELLOW;
+
+        /* Print UI and hardware debug data
         std::cout << "\r" << CLEAR_LINE
-                  << ANSI_BOLD << " Live CPS: " << color_code << std::setw(8) << current_cps 
-                  << ANSI_RESET << " Hz" << std::flush;
+                  << ANSI_BOLD << " Live Rate: " << color_code << std::setw(8) << current_cps 
+                  << ANSI_RESET << " cps"
+                  << " | Debug -> Delta TS: " << dt_ns << " ns"
+                  << " | Delta Events: " << delta_events
+                  << std::flush;
+        */
 
         next_tick += std::chrono::seconds(1);
     }
-
-    irq_handler.stop();
     
+    irq_handler.stop();
     std::cout << "\n\n" << ANSI_YELLOW << "[System] Monitor stopped cleanly." << ANSI_RESET << "\n";
     std::cout << SHOW_CURSOR;
 
