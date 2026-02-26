@@ -27,9 +27,10 @@
 #include <cstddef>
 
 struct GpioIrqEvent {
-    uint64_t timestamp_ns;
-    uint32_t event_counter;
-    //uint32_t pin_state;
+    uint64_t timestamp_ns;   // u64 in C
+    uint32_t event_counter;  // u32 in C
+    //uint32_t pin_state;     // u32 in C
+    uint32_t _padding;       // Explicit padding to 16 bytes
 };
 
 #define KBUF_SIZE 256

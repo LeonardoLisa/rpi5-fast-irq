@@ -14,7 +14,7 @@ The project is divided into the following directories:
 * **`kernel_module/`**: Contains the LKM (`rpi_fast_irq.c`) responsible for catching the hardware interrupt in Ring 0 and exposing the `mmap` interface.
 * **`Basic_usage/`**: A minimal C++ implementation (`irq_test.x`) demonstrating how to instantiate the library and receive events.
 * **`Benchmark/`**: A high-performance tool (`benchmark.x`) and a ROOT macro (`analyze_jitter.C`) to measure the time delta between consecutive GPIO interrupts, buffer up to 1,000,000 samples in RAM, and calculate system jitter.
-* **`CountsPerSecond/`**: A real-time terminal monitor (`CPS.x`) utilizing ANSI escape codes to display the live interrupt frequency.
+* **`CountsPerSecond/`**: A real-time terminal monitor (`cps_monitor.x`) utilizing ANSI escape codes to display the live interrupt frequency.
 * **`CountsPerSecond_Plot/`**: A real-time graphical monitor (`cps_root.x`) that plots Counts Per Second (CPS) using the CERN ROOT framework.
 
 ---
@@ -135,12 +135,12 @@ root -l 'analyze_jitter.C("deltaevents_HH-MM-SS_DD-MM-YYYY.dat")'
 ### Benchmark Results
 <table>
 <tr>
+<td align="center"><b>10 Hz</b></td>
 <td align="center"><b>100 Hz</b></td>
-<td align="center"><b>500 Hz</b></td>
 </tr>
 <tr>
-<td><img src="Benchmark/100Hz.png" alt="100Hz Benchmark" width="400"/></td>
-<td><img src="Benchmark/500Hz.png" alt="500Hz Benchmark" width="400"/></td>
+<td><img src="Benchmark/10Hz.png" alt="100Hz Benchmark" width="400"/></td>
+<td><img src="Benchmark/100Hz.png" alt="500Hz Benchmark" width="400"/></td>
 </tr>
 <tr>
 <td align="center"><b>1 kHz</b></td>
@@ -156,11 +156,11 @@ root -l 'analyze_jitter.C("deltaevents_HH-MM-SS_DD-MM-YYYY.dat")'
 
 ## Live CPS Monitor
 
-To monitor the interrupt frequency in real-time, use the Counts Per Second (CPS) application.
+To monitor the interrupt frequency in real-time, use the Counts Per Second (CPS) terminal application.
 ```bash
 cd CountsPerSecond
 make
-sudo ./CPS.x
+sudo ./cps_monitor.x
 ```
 
 ---
@@ -172,7 +172,9 @@ To visualize the interrupt frequency dynamically on a live updating graph, use t
 ```bash
 cd CountsPerSecond_Plot
 make
-sudo ./cps_root.x
+
+# If using a Conda environment, preserve compiler paths by explicitly passing CXX
+sudo CXX=g++ -E ./cps_root.x
 ```
 
 Note: The application plots a sliding 60-second window and auto-scales the Y-axis based on the live data. Close the GUI window or press Ctrl+C in the terminal to terminate.
@@ -197,5 +199,6 @@ Because this project isolates the CPU and bypasses the standard scheduler, laten
 * **Module fails to load (`insmod: ERROR: could not insert module...`)**: Ensure your kernel headers match your running kernel (`uname -r`). 
 * **`poll()` error / File not found**: Ensure the kernel module is loaded before running the C++ app. Check if `/dev/rp1_gpio_irq` exists.
 * **Warning: Failed to set SCHED_FIFO priority**: You must run the C++ executable with `sudo` or grant the process `CAP_SYS_NICE` capabilities.
+* **ROOT GUI fails with `cannot extract standard library include paths!`**: You are likely running `sudo` within a Conda environment, which strips the necessary environment variables. Run `sudo CXX=g++ -E ./cps_root.x`.
 * **Events are dropping (Hardware)**: If the frequency exceeds the kernel's processing capability, the kernel ring buffer will overflow. Increase `KBUF_SIZE` in `kernel_module/rpi_fast_irq.c` and the corresponding headers.
 * **Events are dropping (User Space)**: If the main thread takes too long to process data, the C++ Lock-Free Ring Buffer will fill up. Ensure no synchronous I/O operations block the polling loop.
