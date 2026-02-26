@@ -44,8 +44,8 @@ bool RpiFastIrq::start(IrqCallback user_callback) {
     // O_RDWR required for PROT_WRITE mmap mapping
     m_fd = ::open(m_device_path.c_str(), O_RDWR);
     if (m_fd < 0) {
-        std::cerr << "[RpiFastIrq] Failed to open device: " << m_device_path 
-                  << " Error: " << std::strerror(errno) << "\n";
+        std::cerr << "\033[31m[RpiFastIrq] Failed to open device: " << m_device_path 
+                  << " Error: " << std::strerror(errno) << "\033[0m\n";
         return false;
     }
 
@@ -54,7 +54,7 @@ bool RpiFastIrq::start(IrqCallback user_callback) {
 
     m_shared_buf = static_cast<SharedRingBuffer*>(::mmap(NULL, m_mmap_size, PROT_READ | PROT_WRITE, MAP_SHARED, m_fd, 0));
     if (m_shared_buf == MAP_FAILED) {
-        std::cerr << "[RpiFastIrq] mmap failed: " << std::strerror(errno) << "\n";
+        std::cerr << "\033[31m[RpiFastIrq] mmap failed: " << std::strerror(errno) << "\033[0m\n";
         ::close(m_fd);
         m_fd = -1;
         return false;
@@ -91,7 +91,7 @@ void RpiFastIrq::listener_thread_func() {
     struct sched_param param;
     param.sched_priority = sched_get_priority_max(SCHED_FIFO);
     if (sched_setscheduler(0, SCHED_FIFO, &param) == -1) {
-        std::cerr << "[RpiFastIrq] Warning: Failed to set SCHED_FIFO priority. Requires root privileges.\n";
+        std::cerr << "\033[33m[RpiFastIrq] Warning: Failed to set SCHED_FIFO priority. Requires root privileges.\033[0m\n";
     }
 
     struct pollfd pfd;
@@ -109,7 +109,7 @@ void RpiFastIrq::listener_thread_func() {
 
         if (ret < 0) {
             if (errno != EINTR) {
-                std::cerr << "[RpiFastIrq] poll() error: " << std::strerror(errno) << "\n";
+                std::cerr << "\033[31m[RpiFastIrq] poll() error: " << std::strerror(errno) << "\033[0m\n";
                 break;
             }
         } else if (ret > 0) {

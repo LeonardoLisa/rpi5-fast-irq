@@ -96,7 +96,7 @@ int main() {
     };
 
     if (!irq_handler.start(my_irq_callback)) {
-        std::cerr << "[Error] Could not start IRQ listener." << std::endl;
+        std::cerr << "\033[31m[Error] Could not start IRQ listener.\033[0m" << std::endl;
         return 1;
     }
 
