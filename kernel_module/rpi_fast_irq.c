@@ -107,7 +107,7 @@ static irqreturn_t gpio_isr(int irq, void *dev_id) {
     // Write payload
     shared_buf->events[current_head % KBUF_SIZE].timestamp_ns = ts;
     shared_buf->events[current_head % KBUF_SIZE].event_counter = total_interrupts;
-    shared_buf->events[current_head % KBUF_SIZE].pin_state = state;
+    //shared_buf->events[current_head % KBUF_SIZE].pin_state = state;
     
     // Memory barrier: ensure payload is written to memory before head is updated
     smp_store_release(&shared_buf->head, current_head + 1);

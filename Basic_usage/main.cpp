@@ -67,7 +67,7 @@ LockFreeRingBuffer<GpioIrqEvent, 1024> g_event_buffer;
 std::atomic<bool> g_keep_running{true};
 
 // Handle Ctrl+C (SIGINT) to shut down gracefully
-void signal_handler(int signum) {
+void signal_handler([[maybe_unused]] int signum) {
     std::cout << "\n[Main] Shutdown signal received. Exiting safely...\n";
     g_keep_running = false;
 }

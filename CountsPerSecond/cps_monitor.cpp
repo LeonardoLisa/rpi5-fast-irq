@@ -109,14 +109,13 @@ int main() {
         if (current_cps > 50000) color_code = ANSI_RED;
         else if (current_cps > 10000) color_code = ANSI_YELLOW;
 
-        /* Print UI and hardware debug data
+        /* Print UI and hardware debug data */
         std::cout << "\r" << CLEAR_LINE
                   << ANSI_BOLD << " Live Rate: " << color_code << std::setw(8) << current_cps 
                   << ANSI_RESET << " cps"
-                  << " | Debug -> Delta TS: " << dt_ns << " ns"
-                  << " | Delta Events: " << delta_events
+                  //<< " | Debug -> Delta TS: " << dt_ns << " ns"
+                  //<< " | Delta Events: " << delta_events
                   << std::flush;
-        */
 
         next_tick += std::chrono::seconds(1);
     }
